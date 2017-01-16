@@ -1,0 +1,10 @@
+/nbproject/private/
+/build/
+build.xml
+nbproject/build-impl.xml
+nbproject/genfiles.properties
+nbproject/project.properties
+nbproject/project.xml
+src/lua/LexicalAnalyzer.java~
+src/main/LexicalAnalyzer.java~
+bin/*
