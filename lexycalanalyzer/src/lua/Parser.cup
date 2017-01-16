@@ -1,0 +1,654 @@
+/* CUP Parser */
+
+package lua;
+
+import java.util.*;
+import java.io.*;
+import java_cup.runtime.*;
+
+parser code {:
+    public static void main(String[] args) throws Exception{
+        try {
+			Parser parser = new Parser();
+			parser.setScanner(new Lexer(new FileReader (args[0])));
+            parser.parse();
+        } catch ( IOException exception ) {
+            throw new Error( "Unable to open file" );
+        }
+    }
+
+    public void syntax_error (Symbol s) {
+        report_error("Erro de sintaxe na linha: " + (s.right+1) + " e na coluna: " + s.left + ". Texto: -- " +
+        s.value+ " --", null);
+    }
+    
+    public void unrecovered_syntax_error(Symbol s) throws java.lang.Exception {
+        System.out.println("\nOcorreu um erro na linha " + (s.right)+ ", coluna "+s.left+". Identificador " +
+        s.value + " nao reconhecido.");
+	}
+:};
+
+//DEFINICAO TOKENS 
+terminal Token NOME, STRING_LUA, COMENTARIO_EM_BLOCO, COMENTARIO_CURTO, LACO_FACA, FIM_DO_LACO, LACO_ENQUANTO, REPETICAO, ATE_LIMITE_LACO;
+terminal Token SE_CONDICIONAL, ENTAO, SENAO_SE, SENAO, LACO_PARA, DENTRO, FUNCAO, FUNCAO_LOCAL, DEFINICAO_LOCAL, RETORNO, QUEBRA_LACO, NULO,VALOR_FALSO;
+terminal Token VALOR_VERDADEIRO, OPERADOR_E, OPERADOR_OU, NEGACAO, brancos, ATRIBUICAO, PONTO, DOIS_PONTOS, VIRGULA, ABRE_COLCHETES, FECHA_COLCHETES;
+terminal Token EXPRESSAO_VARARG , PONTO_E_VIRGULA, SOMA, SUBTRACAO, MULTIPLICACAO, DIVISAO,  EXPONENCIACAO, RESTO, CONCATENAR_STRING, MENOR_QUE, MENOR_IGUAL_QUE;
+terminal Token MAIOR_QUE, MAIOR_IGUAL_QUE, IGUAL_COMPARATIVO, DIFERENTE, TAMANHO, ABRE_PARENTESIS, FECHA_PARENTESIS, ABRE_CHAVES, FECHA_CHAVES, NUMERO;
+//terminal EXCLAMACAO;
+
+//DEFINICAO NOS
+non terminal No bloco, comando, funcao, op_un, op_bin, ultimo_comando, nome_de_funcao, lista_de_variaveis, variavel, lista_de_nomes, lista_de_expressoes, n_lista_de_expressoes;
+non terminal No expressao, prefixo_de_expressao, chamada_de_funcao, argumentos, corpo_da_funcao, lista_de_parametros, n_lista_de_parametros, construtor_de_tabelas;
+non terminal No lista_de_campos, campo, vazio, separador_de_campos, lista_de_comandos, comando_senao, repeticao_de_expressoes, atribuicao_lista_de_expressoes;
+
+//DEFINICAO PRECEDENCIAS
+precedence left PONTO_E_VIRGULA;
+precedence left ABRE_PARENTESIS;
+precedence left VIRGULA;
+precedence left OPERADOR_OU;
+precedence left OPERADOR_E;
+precedence right DOIS_PONTOS;
+precedence left MENOR_QUE, MAIOR_QUE, MENOR_IGUAL_QUE, MAIOR_IGUAL_QUE, DIFERENTE, IGUAL_COMPARATIVO;
+precedence left CONCATENAR_STRING;
+precedence left SOMA, SUBTRACAO;
+precedence left MULTIPLICACAO, DIVISAO, RESTO;
+precedence left NEGACAO, TAMANHO;
+precedence right  EXPONENCIACAO;
+
+start with bloco;
+
+/*------------------------- CONSTRUCAO DA ARVORE -------------------------*/
+
+bloco 								::= lista_de_comandos:lista_de_comandos ultimo_comando:ultimo_comando
+									{:
+										No no = new No(new Token("#"));
+										no.addFilho(lista_de_comandos);
+										no.addFilho(ultimo_comando);
+										RESULT = no;
+									:}
+									| lista_de_comandos:lista_de_comandos
+									{:
+										System.out.println(lista_de_comandos);
+										RESULT = lista_de_comandos;
+									:}
+									| ultimo_comando:ultimo_comando
+									{:
+										RESULT = ultimo_comando;
+									:}
+									| 
+									{:
+										RESULT = new No();
+									:}
+									;
+	
+lista_de_comandos					::=	comando:comando PONTO_E_VIRGULA:ponto_e_virgula
+									{:
+										No no = comando;
+										no.addFilho(ponto_e_virgula);
+										RESULT = no;
+									:}
+									| comando:comando PONTO_E_VIRGULA:ponto_e_virgula lista_de_comandos:lista_de_comandos
+									{:
+										No no = new No(new Token("#"));
+										no.addFilho(comando);
+										no.addFilho(ponto_e_virgula);
+										no.addFilho(lista_de_comandos);
+										RESULT = no;
+									:}
+									| comando:comando
+									{:
+										RESULT = comando;
+									:}
+									| comando:comando lista_de_comandos:lista_de_comandos
+									{:
+										No no = comando;
+										no.addFilho(lista_de_comandos);
+										RESULT = no;
+									:}
+									;
+					
+prefixo_de_expressao				::=	variavel:variavel
+									{:
+										RESULT = variavel;
+									:}
+									| chamada_de_funcao:chamada_de_funcao
+									{:
+										RESULT = chamada_de_funcao;
+									:}
+									| ABRE_PARENTESIS:abre_parentesis expressao:expressao FECHA_PARENTESIS:fecha_parentesis
+									{:
+										No no = new No(new Token("#"));
+										no.addFilho(abre_parentesis);
+										no.addFilho(expressao);
+										no.addFilho(fecha_parentesis);
+										RESULT = no;
+									:}
+									; 
+						
+comando        						::=  lista_de_variaveis:lista_de_variaveis ATRIBUICAO:atribuicao lista_de_expressoes:lista_de_expressoes 
+									{:
+										No no = lista_de_variaveis;
+										no.addFilho(atribuicao);
+										no.addFilho(lista_de_expressoes);
+										RESULT = no;
+									:}
+									| chamada_de_funcao:chamada_de_funcao
+									{:
+										RESULT = chamada_de_funcao;
+									:}
+									| LACO_FACA:laco_faca bloco:bloco FIM_DO_LACO:fim_do_laco 
+									{:
+										No no = new No(laco_faca);
+										no.addFilho(bloco);
+										no.addFilho(fim_do_laco);
+										RESULT = no;
+									:}
+									| LACO_ENQUANTO:laco_enquanto expressao:expressao LACO_FACA:laco_faca bloco:bloco FIM_DO_LACO:fim_do_laco
+									{:
+										No no = new No(laco_enquanto);
+										no.addFilho(expressao);
+										no.addFilho(laco_faca);
+										no.addFilho(bloco);
+										no.addFilho(fim_do_laco);
+										RESULT = no;
+									:}
+									| REPETICAO:repeticao bloco:bloco ATE_LIMITE_LACO:ate_limite_laco expressao:expressao
+			        		        {:
+										No no = new No(repeticao);
+										no.addFilho(bloco);
+										no.addFilho(ate_limite_laco);
+										no.addFilho(expressao);
+										RESULT = no;
+									:}
+			        		        | SE_CONDICIONAL:se_condicional expressao:expressao ENTAO:entao bloco:bloco comando_senao:comando_senao FIM_DO_LACO:fim_do_laco
+			                		{:
+										No no = new No(new Token("#"));
+										
+										No se = new No(se_condicional);
+										se.addFilho(expressao);
+										se.addFilho(entao);
+										se.addFilho(bloco);
+			
+										no.addFilho(se);
+										no.addFilho(comando_senao);
+										no.addFilho(fim_do_laco);
+										
+										RESULT = no;
+									:}
+			                		| LACO_PARA:laco_para NOME:nome ATRIBUICAO:atribuicao expressao:expressao VIRGULA:virgula expressao:expressao2 repeticao_de_expressoes:repeticao_de_expressoes LACO_FACA:laco_faca bloco:bloco FIM_DO_LACO:fim_do_laco
+			                		{:
+										No no = new No(laco_para);
+										no.addFilho(nome);
+										no.addFilho(atribuicao);
+										no.addFilho(expressao);
+										no.addFilho(virgula);
+										no.addFilho(expressao2);
+										no.addFilho(repeticao_de_expressoes);
+										no.addFilho(laco_faca);
+										no.addFilho(bloco);
+										no.addFilho(fim_do_laco);
+										RESULT = no;
+									:}
+									| LACO_PARA:laco_para lista_de_nomes:lista_de_nomes DENTRO:dentro lista_de_expressoes:lista_de_expressoes LACO_FACA:laco_faca bloco:bloco FIM_DO_LACO:fim_do_laco
+									{:
+										No no = new No(laco_para);
+										no.addFilho(lista_de_nomes);
+										no.addFilho(dentro);
+										no.addFilho(lista_de_expressoes);
+										no.addFilho(laco_faca);
+										no.addFilho(bloco);
+										no.addFilho(fim_do_laco);
+										RESULT = no;
+									:}
+									| FUNCAO:funcao nome_de_funcao:nome_de_funcao corpo_da_funcao:corpo_da_funcao  
+					 				{:
+										No no = new No(funcao);
+										no.addFilho(nome_de_funcao);
+										no.addFilho(corpo_da_funcao);
+										RESULT = no;
+									:}
+					 				| FUNCAO_LOCAL:funcao_local NOME:nome corpo_da_funcao:corpo_da_funcao
+					 				{:
+										No no = new No(funcao_local);
+										no.addFilho(nome);
+										no.addFilho(corpo_da_funcao);
+										RESULT = no;
+									:}
+					 				| DEFINICAO_LOCAL:definicao_local lista_de_nomes:lista_de_nomes atribuicao_lista_de_expressoes:atribuicao_lista_de_expressoes
+									{:
+										No no = new No(definicao_local);
+										no.addFilho(lista_de_nomes);
+										no.addFilho(atribuicao_lista_de_expressoes);
+										RESULT = no;
+									:}
+									;
+			
+ultimo_comando						::=	RETORNO:retorno n_lista_de_expressoes:n_lista_de_expressoes
+									{:
+										No no = new No(retorno);
+										no.addFilho(n_lista_de_expressoes);
+										RESULT = no;
+									:} 	
+									| QUEBRA_LACO:quebra_laco
+									{:
+										RESULT = new No(quebra_laco);
+									:}
+									; 						
+ 						
+funcao								::= FUNCAO:funcao corpo_da_funcao:corpo_da_funcao
+									{:
+										No no = new No(funcao);
+										no.addFilho(corpo_da_funcao);
+										RESULT = no;
+									:}
+									;
+
+nome_de_funcao						::= NOME:nome 
+									{:
+										RESULT = new No(nome);
+									:}	
+									| NOME:nome PONTO:ponto nome_de_funcao:nome_de_funcao 
+									{:
+										No no = new No(nome);
+										no.addFilho(ponto);
+										no.addFilho(nome_de_funcao);
+										RESULT = no;
+									:}	
+									| NOME:nome DOIS_PONTOS:dois_pontos NOME:nome2 
+									{:
+										No no = new No(nome);
+										no.addFilho(dois_pontos);
+										no.addFilho(nome2);
+										RESULT = no;
+									:}	
+									;
+
+comando_senao						::= SENAO:senao bloco:bloco 
+									{:
+										No no = new No(senao);
+										no.addFilho(bloco);
+										RESULT = no;
+									:}							
+									| SENAO_SE:senao_se expressao:expressao ENTAO:entao bloco:bloco comando_senao:comando_senao
+									{:
+										No no = new No(senao_se);
+										no.addFilho(expressao);
+										no.addFilho(entao);
+										no.addFilho(bloco);
+										no.addFilho(comando_senao);
+										RESULT = no;
+									:}	
+									|
+									{:
+			                        	RESULT = new No();
+			                        :}
+									;	
+												
+repeticao_de_expressoes				::= VIRGULA:virgula expressao:expressao
+									{:
+										No no = new No(virgula);
+										no.addFilho(expressao);
+										RESULT = no;
+									:}		
+									| 
+									{:
+										RESULT = new No();
+									:} 
+									;
+lista_de_variaveis					::= variavel:variavel
+									{:
+										RESULT = variavel;
+									:}
+									| variavel:variavel VIRGULA:virgula lista_de_variaveis:lista_de_variaveis
+									{:
+										No no = variavel;
+										no.addFilho(virgula);
+										no.addFilho(lista_de_variaveis);
+										RESULT = no;
+									:}
+									;
+												
+lista_de_expressoes					::= expressao:expressao
+									{:
+										No no = new No(new Token("#"));
+										no.addFilho(expressao);
+										RESULT = no;
+									:}
+									| expressao:expressao VIRGULA:virgula lista_de_expressoes:lista_de_expressoes
+									{:
+										No no = new No(new Token("#"));
+										no.addFilho(expressao);
+										no.addFilho(virgula);
+										no.addFilho(lista_de_expressoes);
+										RESULT = no;
+									:} 
+									;
+									
+n_lista_de_expressoes				::= lista_de_expressoes:lista_de_expressoes 
+			                        {:
+			                        	RESULT = lista_de_expressoes;
+			                        :}
+			                        | 
+			                        {:
+			                        	RESULT = new No();
+			                        :}
+			                        ;
+					
+atribuicao_lista_de_expressoes   	::=   ATRIBUICAO:atribuicao lista_de_expressoes:lista_de_expressoes
+									{:
+										No no = new No(atribuicao);
+										no.addFilho(lista_de_expressoes);
+										RESULT = no;
+									:}
+                      				| 
+                      				{:
+                      					RESULT = new No();
+                      				:}
+							     	;	
+							     	
+lista_de_nomes				    	::= NOME:nome
+									{:
+										No no = new No (new Token("#"));
+										no.addFilho(nome);
+										RESULT = no;
+									:}
+									| lista_de_nomes:lista_de_nomes VIRGULA:virgula NOME:nome
+									{:
+										No no = lista_de_nomes;
+										no.addFilho(virgula);
+										no.addFilho(nome);
+										RESULT = no;
+									:}
+									;
+								
+variavel							::=	NOME:nome
+									{:
+										RESULT = new No(nome);
+									:}
+									| prefixo_de_expressao:prefixo_de_expressao ABRE_COLCHETES:abre_colchetes expressao:expressao FECHA_COLCHETES:fecha_colchetes	
+									{:
+										No no = prefixo_de_expressao;
+										no.addFilho(abre_colchetes);
+										no.addFilho(expressao);
+										no.addFilho(fecha_colchetes);
+										RESULT = no;
+									:}
+									| prefixo_de_expressao:prefixo_de_expressao  PONTO:ponto NOME:nome
+									{:
+										No no = prefixo_de_expressao;
+										no.addFilho(ponto);
+										no.addFilho(nome);
+										RESULT = no;
+									:}
+									;
+
+expressao							::=	NULO
+									{:
+										RESULT = new No();
+									:}
+									| VALOR_FALSO:valor_falso
+									{:
+										RESULT = new No(valor_falso);
+									:}
+									| VALOR_VERDADEIRO:valor_verdadeiro
+									{:
+										RESULT = new No(valor_verdadeiro);
+									:}
+									| NUMERO:numero
+									{:
+										RESULT = new No(numero);
+									:}
+									| STRING_LUA:string_lua
+									{:
+										RESULT = new No(string_lua);
+									:}
+									| EXPRESSAO_VARARG :expressao_vararg
+									{:
+										RESULT = new No(expressao_vararg);
+									:}
+									| funcao:funcao
+									{:
+										RESULT = funcao;
+									:}
+									| prefixo_de_expressao:prefixo_de_expressao
+									{:
+										RESULT = prefixo_de_expressao;
+									:}
+									| construtor_de_tabelas:construtor_de_tabelas
+									{:
+										RESULT = construtor_de_tabelas;
+									:}
+									| expressao:expressao op_bin:op_bin expressao:expressao2 
+									{:
+										No no = expressao;
+										no.addFilho(op_bin);
+										no.addFilho(expressao2);
+										RESULT = no;
+									:}
+									| op_un:op_un expressao:expressao
+									{:
+										No no = op_un;
+										no.addFilho(expressao);
+										RESULT = no;
+									:}
+									;	
+	
+chamada_de_funcao					::= prefixo_de_expressao:prefixo_de_expressao argumentos:argumentos
+									{:
+										No no = new No(new Token("#"));
+										no.addFilho(prefixo_de_expressao);
+										no.addFilho(argumentos);
+										RESULT = no;
+									:}
+									| prefixo_de_expressao:prefixo_de_expressao DOIS_PONTOS:dois_pontos NOME:nome argumentos:argumentos
+									{:
+										No no = new No(new Token("#"));
+										no.addFilho(prefixo_de_expressao);
+										no.addFilho(dois_pontos);
+										no.addFilho(nome);
+										no.addFilho(argumentos);
+										RESULT = no;
+									:}
+									;
+
+argumentos							::= ABRE_PARENTESIS:abre_parentesis n_lista_de_expressoes:n_lista_de_expressoes FECHA_PARENTESIS:fecha_parentesis
+									{:
+										No no = new No(new Token("#"));
+										no.addFilho(abre_parentesis);
+										no.addFilho(n_lista_de_expressoes);
+											no.addFilho(fecha_parentesis);
+											RESULT = no;
+										:}
+										| construtor_de_tabelas:construtor_de_tabelas
+									{:
+										RESULT = construtor_de_tabelas;
+									:}
+									| NOME:nome
+									{:
+										RESULT = new No(nome);
+									:}
+									;
+
+corpo_da_funcao						::= ABRE_PARENTESIS:abre_parentesis n_lista_de_parametros:n_lista_de_parametros FECHA_PARENTESIS:fecha_parentesis bloco:bloco FIM_DO_LACO:fim_do_laco
+									{:
+										No no = new No(new Token("#"));
+										no.addFilho(abre_parentesis);
+										no.addFilho(n_lista_de_parametros);
+										no.addFilho(fecha_parentesis);
+										no.addFilho(bloco);
+										no.addFilho(fim_do_laco);
+										RESULT = no;
+									:}
+									;
+
+lista_de_parametros					::= lista_de_nomes:lista_de_nomes
+									{:
+										RESULT = lista_de_nomes;
+									:}
+									| lista_de_nomes:lista_de_nomes VIRGULA:virgula EXPRESSAO_VARARG:expressao_vararg
+									{:
+										No no = lista_de_nomes;
+										no.addFilho(virgula);
+										no.addFilho(expressao_vararg);
+										RESULT = no;
+									:}
+									| EXPRESSAO_VARARG:expressao_vararg
+									{:
+										RESULT = new No(expressao_vararg);
+									:}
+									;	
+
+n_lista_de_parametros				::= lista_de_parametros:lista_de_parametros 
+									{:
+										RESULT = lista_de_parametros;
+									:}
+			                        |
+									{:
+										RESULT = new No();
+									:}	
+			                        ;
+			                        
+construtor_de_tabelas 				::= ABRE_CHAVES:abre_chaves lista_de_campos:lista_de_campos FECHA_CHAVES:fecha_chaves
+			 						{:
+										No no = new No(abre_chaves);
+										no.addFilho(lista_de_campos);
+										no.addFilho(fecha_chaves);
+										RESULT = no;
+									:}	
+			 						| ABRE_CHAVES:abre_chaves FECHA_CHAVES:fecha_chaves
+			 						{:
+										No no = new No(abre_chaves);
+										no.addFilho(fecha_chaves);
+										RESULT = no;
+									:}	
+			 						; 
+
+lista_de_campos						::= campo:campo
+									{:
+							            RESULT = campo;
+							        :}
+									| campo:campo separador_de_campos:separador_de_campos lista_de_campos:lista_de_campos
+									{:
+										No no = campo;
+										no.addFilho(separador_de_campos);
+										no.addFilho(lista_de_campos);
+										RESULT = no;
+									:}									
+									;
+								
+campo								::= ABRE_COLCHETES:abre_col expressao:expressao FECHA_COLCHETES:fecha_col ATRIBUICAO:atribuicao expressao:expressao2
+									{:
+										No no = new No(abre_col);
+										no.addFilho(expressao);
+										no.addFilho(fecha_col);
+										no.addFilho(atribuicao);
+										no.addFilho(expressao2);
+							            RESULT = no;
+							        :}
+									| NOME ATRIBUICAO:atribuicao expressao:expressao
+									{:
+										No no = new No(atribuicao);
+										no.addFilho(expressao);
+							            RESULT = no;
+							        :}
+									| expressao:expressao
+									{:
+							            RESULT = expressao;
+							        :}
+									;
+
+separador_de_campos					::=	VIRGULA:virgula
+									{:
+							            RESULT = new No(virgula);
+							        :}
+									| PONTO_E_VIRGULA:ponto_e_virgula
+									{:
+							            RESULT = new No(ponto_e_virgula);
+							        :}
+									| 
+									{:
+										RESULT = new No();
+									:}				
+									;
+		
+op_bin								::=	SOMA:soma
+									{:
+							            RESULT = new No(soma);
+							        :}
+									| SUBTRACAO:subtracao
+									{:
+							            RESULT = new No(subtracao);
+							        :}
+									| MULTIPLICACAO:multiplicacao
+									{:
+							            RESULT = new No(multiplicacao);
+							        :}
+									| DIVISAO:divisao
+									{:
+							            RESULT = new No(divisao);
+							        :}
+									| RESTO:resto
+									{:
+							            RESULT = new No(resto);
+							        :}
+									| EXPONENCIACAO:exponenciacao
+									{:
+							            RESULT = new No(exponenciacao);
+							        :}
+									| CONCATENAR_STRING:concatenar_string
+									{:
+							            RESULT = new No(concatenar_string);
+							        :}
+									| IGUAL_COMPARATIVO:igual_comparativo
+									{:
+							            RESULT = new No(igual_comparativo);
+							        :}
+									| MENOR_IGUAL_QUE:menor_igual_que
+									{:
+							            RESULT = new No(menor_igual_que);
+							        :}
+									| DIFERENTE:diferente
+									{:
+							            RESULT = new No(diferente);
+							        :}
+									| MENOR_QUE:menor_que
+									{:
+							            RESULT = new No(menor_que);
+							        :}
+									| MAIOR_QUE:maior_que
+									{:
+							            RESULT = new No(maior_que);
+							        :}
+									| MAIOR_IGUAL_QUE:maior_igual_que
+									{:
+							            RESULT = new No(maior_igual_que);
+							        :}
+									| OPERADOR_E:operador_e
+									{:
+							            RESULT = new No(operador_e);
+							        :}
+									| OPERADOR_OU:operador_ou
+									{:
+							            RESULT = new No(operador_ou);
+							        :}
+									;
+						
+op_un								::=	SUBTRACAO:subtracao
+									{:
+							            RESULT = new No(subtracao);
+							        :}
+									| NEGACAO:negacao
+									{:
+							            RESULT = new No(negacao);
+							        :}
+									| TAMANHO:tamanho
+									{:
+							            RESULT = new No(tamanho);
+							        :}
+									;		
+
+vazio								::= brancos 
+									{:
+										RESULT = new No();
+									:}
+									;

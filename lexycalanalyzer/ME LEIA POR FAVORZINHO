@@ -1,0 +1,7 @@
+Executa Generator, 
+Corrige o erro que vai falar "return null;" pra "return;"
+Executa Lua
+Prints no console.
+java -jar ../../jflex-1.6.1.jar Lexer.lex
+//Rodando parser ignorando 11 warnings
+java -jar ../../java-cup-11a.jar -parser Parser -expect 11 -symbols Sym Parser.cup
